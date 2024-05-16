@@ -3,11 +3,11 @@ import json
 import logging
 import os
 import re
+import sqlite3
 from zipfile import ZipFile
 
-from PIL import Image
 import imagehash
-import sqlite3
+from PIL import Image
 from telegram import Update
 from telegram.constants import ChatMemberStatus
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
@@ -15,8 +15,10 @@ from telegram.ext.filters import ChatType
 
 bot_token = os.environ['APIKEY']
 
-hash_con = sqlite3.connect("hash_data.db")
-settings_con = sqlite3.connect("settings.db")
+if not os.path.exists("db"):
+    os.mkdir("db")
+hash_con = sqlite3.connect("db/hash_data.db")
+settings_con = sqlite3.connect("db/settings.db")
 
 hash_cur = hash_con.cursor()
 settings_cur = settings_con.cursor()
@@ -27,11 +29,12 @@ settings_cur.execute("CREATE TABLE IF NOT EXISTS chat_settings(chat_id NUMERIC P
 get_chat_text = "SELECT settings FROM chat_settings WHERE chat_id = ?;"
 add_chat_text = "INSERT INTO chat_settings VALUES(?, ?) ON CONFLICT (chat_id) DO UPDATE SET settings = ?;"
 
-get_hash = "SELECT message_id FROM hash_data WHERE hash = ?;"
-add_hash = "INSERT INTO hash_data VALUES(?, ?);"
+get_hash = "SELECT * FROM hash_data WHERE hash = ?;"
+add_hash = "INSERT INTO hash_data VALUES(?, ?) ON CONFLICT (hash) DO NOTHING;"
 
 hash_data = {}
 hash_length_data = {}
+
 
 application = ApplicationBuilder().token(bot_token).build()
 
@@ -43,7 +46,7 @@ logging.basicConfig(
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id,
-                                   text="I'm a BAYANIST PUNISHER! \n BEHOLD THE TERROR IN THIER EYES!")
+                                   text="I'm a BAYANIST PUNISHER! \nBEHOLD THE TERROR IN THEIR EYES!")
 
 
 async def incorrect_import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -79,7 +82,7 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
             hash_con.commit()
             logging.info("Number of imported records: " + str(len(hash_load)))
             await context.bot.send_message(chat_id=chat_id,
-                                           text="Data import has been completed. \n All bayanists will be punnished with missery!",
+                                           text="Data import has been completed. \nAll bayanists will be punnished with misery!",
                                            reply_to_message_id=prev_message_id)
             break
     if not owner_was_found:
@@ -89,7 +92,7 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    await context.bot.send_message(chat_id=chat_id, text="chat id is  " + str(chat_id))
+    await context.bot.send_message(chat_id=chat_id, text="chat id is " + str(chat_id))
 
 
 async def set_repl_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -108,23 +111,28 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.info('message id is ' + str(current_msg_id))
     chat_id = str(update.message.chat.id)
     logging.info('message received from ' + chat_id)
-    new_file = await update.message.effective_attachment[-1].get_file()
+    if update.message.video is None:
+        new_file = await update.message.effective_attachment[-1].get_file()
+    else:
+        new_file = await update.message.video.thumbnail.get_file()
     f = io.BytesIO()
     await new_file.download_to_memory(f)
     image_hash = imagehash.dhash(Image.open(f))
-    hash_key = str(image_hash) + ':' + chat_id
-    prev_message_id = hash_cur.execute(get_hash, [hash_key]).fetchone()
-    if prev_message_id is None:
+    hash_key = str(image_hash) + '^' + chat_id
+    stored_entity = hash_cur.execute(get_hash, [hash_key]).fetchone()
+    if stored_entity is None:
         hash_cur.execute(add_hash, [hash_key, current_msg_id])
         hash_con.commit()
     else:
         try:
             chat_text = settings_cur.execute(get_chat_text, [update.message.chat.id]).fetchone()[0]
         except TypeError:
-            chat_text = "Reply has been not set"
+            chat_text = "Reply has been not set\nPlease use /set_reply to set custom reply message"
+        stored_chat_id = stored_entity[0].split('^')[1][4:]
+        stored_message_id = stored_entity[1]
         await context.bot.send_message(chat_id=update.effective_chat.id,
-                                       text='Hey, @' + bayanist_username + '\n' + chat_text,
-                                       reply_to_message_id=prev_message_id[0])
+                                       text=chat_text + f"\nhttps://t.me/c/{stored_chat_id}/{stored_message_id}",
+                                       reply_to_message_id=current_msg_id)
 
 
 if __name__ == '__main__':
@@ -133,7 +141,7 @@ if __name__ == '__main__':
     chat_id_handler = CommandHandler('get_chat_id', get_chat_id)
     import_handler_private = CommandHandler('import_hash_data', private_import_hash_data, (~ChatType.GROUPS))
 
-    byayan_handler = MessageHandler(filters.PHOTO, byayan_checker)
+    byayan_handler = MessageHandler(filters.PHOTO | filters.VIDEO, byayan_checker)
     import_handler = MessageHandler(
         filters.ChatType.GROUPS & filters.Document.ZIP & filters.CaptionRegex((re.compile(r'/import_hash_data'))),
         import_hash_data)
