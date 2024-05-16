@@ -31,6 +31,8 @@ add_chat_text = "INSERT INTO chat_settings VALUES(?, ?) ON CONFLICT (chat_id) DO
 
 get_hash = "SELECT * FROM hash_data WHERE hash = ?;"
 add_hash = "INSERT INTO hash_data VALUES(?, ?) ON CONFLICT (hash) DO NOTHING;"
+add_exported_hash = "INSERT INTO hash_data VALUES(?, ?) ON CONFLICT (hash) DO  DO UPDATE SET message_id = ?;"
+
 
 hash_data = {}
 hash_length_data = {}
@@ -78,7 +80,7 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with ZipFile(f) as json_data:
                 hash_load = json.load(json_data.open('hash_data.json'))
             for k, v in hash_load.items():
-                hash_cur.execute(add_hash, [k, v])
+                hash_cur.execute(add_exported_hash, [k, v, v])
             hash_con.commit()
             logging.info("Number of imported records: " + str(len(hash_load)))
             await context.bot.send_message(chat_id=chat_id,
