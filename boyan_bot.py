@@ -31,7 +31,7 @@ add_chat_text = "INSERT INTO chat_settings VALUES(?, ?) ON CONFLICT (chat_id) DO
 
 get_hash = "SELECT * FROM hash_data WHERE hash = ?;"
 add_hash = "INSERT INTO hash_data VALUES(?, ?) ON CONFLICT (hash) DO NOTHING;"
-add_exported_hash = "INSERT INTO hash_data VALUES(?, ?) ON CONFLICT (hash) DO  DO UPDATE SET message_id = ?;"
+add_exported_hash = "INSERT INTO hash_data VALUES(?, ?) ON CONFLICT (hash) DO UPDATE SET message_id = ?;"
 
 
 hash_data = {}
@@ -69,7 +69,7 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(admins)
     owner_was_found = bool('false')
     for admin in admins:
-        print(f'user id {0}, user message id {1}', [admin.user.id, update.message.from_user.id])
+        print(f'user id {admin.user.id}, user message id {update.message.from_user.id}')
         if admin.status is ChatMemberStatus.OWNER and admin.user.id == update.message.from_user.id:
             owner_was_found = bool('true')
             await context.bot.send_message(chat_id=chat_id, text="Data import has been started...",
