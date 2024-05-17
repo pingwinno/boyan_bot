@@ -33,10 +33,8 @@ get_hash = "SELECT * FROM hash_data WHERE hash = ?;"
 add_hash = "INSERT INTO hash_data VALUES(?, ?) ON CONFLICT (hash) DO NOTHING;"
 add_exported_hash = "INSERT INTO hash_data VALUES(?, ?) ON CONFLICT (hash) DO UPDATE SET message_id = ?;"
 
-
 hash_data = {}
 hash_length_data = {}
-
 
 application = ApplicationBuilder().token(bot_token).build()
 
@@ -64,6 +62,12 @@ async def private_import_hash_data(update: Update, context: ContextTypes.DEFAULT
 async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     prev_message_id = update.message.id
+    reply_message = update.message.reply_to_message
+    if reply_message is None or reply_message.text != '/import_hash_data':
+        await context.bot.send_message(chat_id=update.effective_chat.id,
+                                       text="Please, send data as reply to command /import_hash_data")
+        return
+
     logging.info("IMPORT DATA CALLED")
     admins = await context.bot.get_chat_administrators(chat_id)
     print(admins)
@@ -145,8 +149,7 @@ if __name__ == '__main__':
 
     byayan_handler = MessageHandler(filters.PHOTO | filters.VIDEO, byayan_checker)
     import_handler = MessageHandler(
-        filters.ChatType.GROUPS & filters.Document.ZIP & filters.CaptionRegex((re.compile(r'/import_hash_data'))),
-        import_hash_data)
+        filters.ChatType.GROUPS & filters.Document.ZIP, import_hash_data)
     incorrect_import_handler = MessageHandler(
         filters.ChatType.GROUPS & filters.Regex(re.compile(r'/import_hash_data')),
         incorrect_import_hash_data)
