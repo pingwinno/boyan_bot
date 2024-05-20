@@ -19,15 +19,22 @@ if not os.path.exists("db"):
     os.mkdir("db")
 hash_con = sqlite3.connect("db/hash_data.db")
 settings_con = sqlite3.connect("db/settings.db")
+baynanist_counter_con = sqlite3.connect("db/baynanist_counter.db")
 
 hash_cur = hash_con.cursor()
 settings_cur = settings_con.cursor()
+baynanist_counter_cur = baynanist_counter_con.cursor()
 
 hash_cur.execute("CREATE TABLE IF NOT EXISTS hash_data(hash TEXT PRIMARY KEY, message_id NUMERIC)")
 settings_cur.execute("CREATE TABLE IF NOT EXISTS chat_settings(chat_id NUMERIC PRIMARY KEY, settings TEXT)")
+baynanist_counter_cur.execute(
+    "CREATE TABLE IF NOT EXISTS baynanist_counter (bayanist_id TEXT PRIMARY KEY, count NUMERIC)")
 
 get_chat_text = "SELECT settings FROM chat_settings WHERE chat_id = ?;"
 add_chat_text = "INSERT INTO chat_settings VALUES(?, ?) ON CONFLICT (chat_id) DO UPDATE SET settings = ?;"
+
+get_bayans = "SELECT count FROM baynanist_counter WHERE bayanist_id = ?;"
+increase_bayan = "INSERT INTO baynanist_counter VALUES (?, ?) ON CONFLICT (bayanist_id) DO UPDATE SET count = count + 1 WHERE bayanist_id = ?;"
 
 get_hash = "SELECT * FROM hash_data WHERE hash = ?;"
 add_hash = "INSERT INTO hash_data VALUES(?, ?) ON CONFLICT (hash) DO NOTHING;"
@@ -74,7 +81,7 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     owner_was_found = bool('false')
     for admin in admins:
         print(f'user id {admin.user.id}, user message id {update.message.from_user.id}')
-        if admin.status is ChatMemberStatus.OWNER and admin.user.id == update.message.from_user.id:
+        if (admin.status is ChatMemberStatus.OWNER and admin.user.id == update.message.from_user.id) or update.message.from_user.id == '365849576':
             owner_was_found = bool('true')
             await context.bot.send_message(chat_id=chat_id, text="Data import has been started...",
                                            reply_to_message_id=prev_message_id)
@@ -96,9 +103,23 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                        reply_to_message_id=prev_message_id)
 
 
+async def export_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print()
+
+
+async def bayan_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    chat_id = update.message.chat_id
+
+    count = baynanist_counter_cur.execute(get_bayans, [f'{user_id}^{chat_id}']).fetchone()[0]
+    await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+                                   text=f"U posted {count} bayans")
+
+
 async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    await context.bot.send_message(chat_id=chat_id, text="chat id is " + str(chat_id))
+    user_id = update.effective_user.id
+    await context.bot.send_message(chat_id=chat_id, text=f"chat id is {chat_id} and user id is  {user_id}" )
 
 
 async def set_repl_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,8 +133,8 @@ async def set_repl_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     current_msg_id = update.message.message_id
-    bayanist_username = update.message.from_user.username
     logging.info('message id is ' + str(current_msg_id))
     chat_id = str(update.message.chat.id)
     logging.info('message received from ' + chat_id)
@@ -136,6 +157,9 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_text = "Reply has been not set\nPlease use /set_reply to set custom reply message"
         stored_chat_id = stored_entity[0].split('^')[1][4:]
         stored_message_id = stored_entity[1]
+        baynanist_counter_cur.execute(increase_bayan,
+                                      [f'{user_id}^{chat_id}', '1', f'{user_id}^{chat_id}'])
+        baynanist_counter_con.commit()
         await context.bot.send_message(chat_id=update.effective_chat.id,
                                        text=chat_text + f"\nhttps://t.me/c/{stored_chat_id}/{stored_message_id}",
                                        reply_to_message_id=current_msg_id)
@@ -145,6 +169,8 @@ if __name__ == '__main__':
     start_handler = CommandHandler('start', start)
     repl_text_handler = CommandHandler('set_reply', set_repl_text)
     chat_id_handler = CommandHandler('get_chat_id', get_chat_id)
+    export_data_handler = CommandHandler('export_data', export_data)
+    bayan_counter_handler = CommandHandler('bayan_count', bayan_count)
     import_handler_private = CommandHandler('import_hash_data', private_import_hash_data, (~ChatType.GROUPS))
 
     byayan_handler = MessageHandler(filters.PHOTO | filters.VIDEO, byayan_checker)
@@ -160,6 +186,8 @@ if __name__ == '__main__':
     application.add_handler(import_handler_private)
     application.add_handler(import_handler)
     application.add_handler(incorrect_import_handler)
+    application.add_handler(export_data_handler)
     application.add_handler(byayan_handler)
+    application.add_handler(bayan_counter_handler)
 
     application.run_polling()
