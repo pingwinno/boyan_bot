@@ -91,7 +91,13 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with ZipFile(f) as json_data:
                 hash_load = json.load(json_data.open('hash_data.json'))
             for k, v in hash_load.items():
-                hash_cur.execute(add_exported_hash, [k, v, v])
+                if k.split('^')[1] == chat_id:
+                    hash_cur.execute(add_exported_hash, [k, v, v])
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text="That's not your chat, silly",
+                                                   reply_to_message_id=prev_message_id)
+                    hash_con.rollback()
+                    return
             hash_con.commit()
             logging.info("Number of imported records: " + str(len(hash_load)))
             await context.bot.send_message(chat_id=chat_id,
@@ -135,7 +141,7 @@ async def set_repl_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     current_msg_id = update.message.message_id
-    logging.info('message id is ' + str(current_msg_id))
+    logging.info(f'message id is {current_msg_id}')
     chat_id = str(update.message.chat.id)
     logging.info('message received from ' + chat_id)
     if update.message.video is None:
@@ -145,7 +151,7 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     f = io.BytesIO()
     await new_file.download_to_memory(f)
     image_hash = imagehash.dhash(Image.open(f))
-    hash_key = str(image_hash) + '^' + chat_id
+    hash_key = f'{image_hash}^{chat_id}'
     stored_entity = hash_cur.execute(get_hash, [hash_key]).fetchone()
     if stored_entity is None:
         hash_cur.execute(add_hash, [hash_key, current_msg_id])
