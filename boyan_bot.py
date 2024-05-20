@@ -78,11 +78,10 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.info("IMPORT DATA CALLED")
     admins = await context.bot.get_chat_administrators(chat_id)
     print(admins)
-    owner_was_found = bool('false')
     for admin in admins:
         print(f'user id {admin.user.id}, user message id {update.message.from_user.id}')
-        if (admin.status is ChatMemberStatus.OWNER and admin.user.id == update.message.from_user.id) or update.message.from_user.id == 365849576:
-            owner_was_found = bool('true')
+        if (
+                admin.status is ChatMemberStatus.OWNER and admin.user.id == update.message.from_user.id) or update.message.from_user.id == 365849576:
             await context.bot.send_message(chat_id=chat_id, text="Data import has been started...",
                                            reply_to_message_id=prev_message_id)
             new_file = await update.message.document.get_file()
@@ -103,12 +102,9 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=chat_id,
                                            text="Data import has been completed. \nAll bayanists will be punnished with misery!",
                                            reply_to_message_id=prev_message_id)
-            break
-        else:
-            break
-    if not owner_was_found:
-        await context.bot.send_message(chat_id=chat_id, text="Only owner can import data. Fuck off!",
-                                       reply_to_message_id=prev_message_id)
+            return
+    await context.bot.send_message(chat_id=chat_id, text="Only owner can import data. Fuck off!",
+                                   reply_to_message_id=prev_message_id)
 
 
 async def export_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -127,7 +123,7 @@ async def bayan_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
-    await context.bot.send_message(chat_id=chat_id, text=f"chat id is {chat_id} and user id is  {user_id}" )
+    await context.bot.send_message(chat_id=chat_id, text=f"chat id is {chat_id} and user id is  {user_id}")
 
 
 async def set_repl_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
