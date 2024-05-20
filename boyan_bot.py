@@ -81,7 +81,7 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     owner_was_found = bool('false')
     for admin in admins:
         print(f'user id {admin.user.id}, user message id {update.message.from_user.id}')
-        if (admin.status is ChatMemberStatus.OWNER and admin.user.id == update.message.from_user.id) or update.message.from_user.id == '365849576':
+        if (admin.status is ChatMemberStatus.OWNER and admin.user.id == update.message.from_user.id) or update.message.from_user.id == 365849576:
             owner_was_found = bool('true')
             await context.bot.send_message(chat_id=chat_id, text="Data import has been started...",
                                            reply_to_message_id=prev_message_id)
