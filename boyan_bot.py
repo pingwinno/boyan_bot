@@ -104,6 +104,9 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                            text="Data import has been completed. \nAll bayanists will be punnished with misery!",
                                            reply_to_message_id=prev_message_id)
             break
+        else:
+            await context.bot.send_message(chat_id=chat_id, text="Only owner can import data. Fuck off!",
+                                           reply_to_message_id=prev_message_id)
     if not owner_was_found:
         await context.bot.send_message(chat_id=chat_id, text="Only owner can import data. Fuck off!",
                                        reply_to_message_id=prev_message_id)
