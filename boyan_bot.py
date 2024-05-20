@@ -74,7 +74,6 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id,
                                        text="Please, send data as reply to command /import_hash_data")
         return
-
     logging.info("IMPORT DATA CALLED")
     admins = await context.bot.get_chat_administrators(chat_id)
     print(admins)
@@ -90,7 +89,7 @@ async def import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with ZipFile(f) as json_data:
                 hash_load = json.load(json_data.open('hash_data.json'))
             for k, v in hash_load.items():
-                if k.split('^')[1] == chat_id:
+                if k.split('^')[1] == str(chat_id):
                     hash_cur.execute(add_exported_hash, [k, v, v])
                 else:
                     await context.bot.send_message(chat_id=chat_id, text="That's not your chat, silly",
