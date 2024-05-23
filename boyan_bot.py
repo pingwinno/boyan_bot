@@ -35,7 +35,7 @@ add_chat_text = "INSERT INTO chat_settings VALUES(?, ?) ON CONFLICT (chat_id) DO
 
 get_bayans = "SELECT count FROM baynanist_counter WHERE bayanist_id = ?;"
 increase_bayan = "INSERT INTO baynanist_counter VALUES (?, ?) ON CONFLICT (bayanist_id) DO UPDATE SET count = count + 1 WHERE bayanist_id = ?;"
-get_bayans_stat = "SELECT bayanist_id, count FROM baynanist_counter ORDER BY count DESC;"
+get_bayans_stat = "SELECT bayanist_id, count FROM baynanist_counter WHERE bayanist_id LIKE ? ORDER BY count DESC;"
 
 get_hash = "SELECT * FROM hash_data WHERE hash = ?;"
 add_hash = "INSERT INTO hash_data VALUES(?, ?) ON CONFLICT (hash) DO NOTHING;"
@@ -112,15 +112,18 @@ async def export_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def bayan_stat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
     boyanist_message_list = []
-    boyanist_message_data = baynanist_counter_cur.execute(get_bayans_stat)
+    boyanist_message_data = baynanist_counter_cur.execute(get_bayans_stat, [f"%^{update.message.chat_id}"]).fetchall()
+
     list_message = "List of idiots:"
     boyanist_message_list.append(list_message)
     for boyanist_data in boyanist_message_data:
-        chat_member = await context.bot.get_chat(chat_id, boyanist_data[0])
-        if chat_member.linked_chat_id == chat_id:
-            boyanist_message_list.append(f"{chat_member.user.first_name} posted {boyanist_data[1]} bayans")
+        print(boyanist_data)
+        bayanist_id = boyanist_data[0].split('^')
+        chat_id = bayanist_id[1]
+        user_id = bayanist_id[0]
+        chat_member = await context.bot.get_chat_member(chat_id, user_id)
+        boyanist_message_list.append(f"{chat_member.user.first_name} posted {boyanist_data[1]} bayans")
     boyanist_message_text = '\n'.join(boyanist_message_list)
     await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
                                    text=boyanist_message_text)
