@@ -118,8 +118,9 @@ async def bayan_stat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     list_message = "List of idiots:"
     boyanist_message_list.append(list_message)
     for boyanist_data in boyanist_message_data:
-        chat_member = await context.bot.get_chat_member(chat_id, boyanist_data[0])
-        boyanist_message_list.append(f"{chat_member.user.first_name} posted {boyanist_data[1]} bayans")
+        chat_member = await context.bot.get_chat(chat_id, boyanist_data[0])
+        if chat_member.linked_chat_id == chat_id:
+            boyanist_message_list.append(f"{chat_member.user.first_name} posted {boyanist_data[1]} bayans")
     boyanist_message_text = '\n'.join(boyanist_message_list)
     await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
                                    text=boyanist_message_text)
