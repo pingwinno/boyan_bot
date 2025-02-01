@@ -170,6 +170,11 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_all_messages_with_picture(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    if update.message.reply_to_message is None:
+        await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+                                       text="Reply with this command to a picture")
+        return
+
     orig_message_id = update.message.reply_to_message.message_id
     hash = hash_cur.execute(get_hash, [orig_message_id, chat_id]).fetchone()
 
