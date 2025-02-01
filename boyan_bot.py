@@ -9,20 +9,22 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 from telegram.ext.filters import ChatType
 
-from importer import get_hash
-
 bot_token = os.environ['APIKEY']
 
 if not os.path.exists("db"):
     os.mkdir("db")
 hash_con = sqlite3.connect("db/hash_data.db")
 settings_con = sqlite3.connect("db/settings.db")
+user_con = sqlite3.connect("db/user_names.db")
 
 hash_cur = hash_con.cursor()
 settings_cur = settings_con.cursor()
+user_cur = user_con.cursor()
 
 hash_cur.execute(
     "CREATE TABLE IF NOT EXISTS hash_data(message_id NUMERIC, hash TEXT, user_id TEXT, chat_id NUMERIC, PRIMARY KEY (message_id, chat_id) )")
+user_cur.execute(
+    "CREATE TABLE IF NOT EXISTS user_name(user_id PRIMARY KEY, name TEXT)")
 settings_cur.execute("CREATE TABLE IF NOT EXISTS chat_settings(chat_id NUMERIC PRIMARY KEY, settings TEXT)")
 
 get_chat_text = "SELECT settings FROM chat_settings WHERE chat_id = ?;"
@@ -60,6 +62,9 @@ get_messages_except_last = "SELECT message_id FROM hash_data WHERE hash = ? AND 
 get_orig_message = "SELECT MIN(message_id) FROM hash_data where hash = ? AND chat_id = ?;"
 add_hash = "INSERT OR IGNORE INTO hash_data VALUES(?, ?, ?, ?);"
 
+get_user_name = "SELECT name FROM user_name WHERE user_id = ?;"
+add_user_name = "INSERT OR REPLACE INTO user_name VALUES(?, ?);"
+
 hash_data = {}
 hash_length_data = {}
 
@@ -90,14 +95,18 @@ async def bayan_stat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     boyanist_message_list = []
     chat_id = update.effective_chat.id
     boyanist_message_data = hash_cur.execute(get_bayans_stat, [chat_id]).fetchall()
-
     list_message = "List of idiots:"
     boyanist_message_list.append(list_message)
     for boyanist_data in boyanist_message_data:
         print(boyanist_data)
         user_id = boyanist_data[0]
-        chat_member = await context.bot.get_chat_member(chat_id, user_id)
-        boyanist_message_list.append(f"{chat_member.user.first_name} posted {boyanist_data[1]} bayans")
+        user_name = user_cur.execute(get_user_name, [int(user_id)]).fetchone()
+        logging.info(f'Boyans for {user_name}, {user_id}')
+        if user_name is None:
+            user_name = "Unknown User"
+        else:
+            user_name = user_name[0]
+        boyanist_message_list.append(f"{user_name} posted {boyanist_data[1]} bayans")
     boyanist_message_text = '\n'.join(boyanist_message_list)
     await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
                                    text=boyanist_message_text)
@@ -131,7 +140,9 @@ async def set_repl_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     current_msg_id = update.message.message_id
+    message_user_name = update.message.from_user.name
     logging.info(f'message id is {current_msg_id}')
+    logging.info(f'user name is {message_user_name}')
     chat_id = str(update.message.chat.id)
     logging.info('message received from ' + chat_id)
     if update.message.video is None:
@@ -144,6 +155,8 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     hash_key = str(image_hash)
     hash_cur.execute(add_hash, [current_msg_id, hash_key, user_id, chat_id])
     hash_con.commit()
+    user_cur.execute(add_user_name, [user_id, message_user_name])
+    user_con.commit()
     if hash_cur.execute(get_messages_except_last, [hash_key, chat_id, current_msg_id]).fetchone() is not None:
         try:
             chat_text = settings_cur.execute(get_chat_text, [chat_id]).fetchone()[0]
