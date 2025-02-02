@@ -157,7 +157,8 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     hash_con.commit()
     user_cur.execute(add_user_name, [user_id, message_user_name])
     user_con.commit()
-    if hash_cur.execute(get_messages_except_last, [hash_key, chat_id, current_msg_id]).fetchone() is not None:
+    previous_messages = hash_cur.execute(get_messages_except_last, [hash_key, chat_id, current_msg_id]).fetchall()
+    if previous_messages:
         try:
             chat_text = settings_cur.execute(get_chat_text, [chat_id]).fetchone()[0]
         except TypeError:
@@ -165,7 +166,8 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
         formated_chat_id = chat_id[4:]
         orig_message_id = hash_cur.execute(get_orig_message, [hash_key, chat_id]).fetchone()[0]
         await context.bot.send_message(chat_id=chat_id,
-                                       text=chat_text + f"\nhttps://t.me/c/{formated_chat_id}/{orig_message_id}",
+                                       text=chat_text + f"\nHas been posted {len(previous_messages)} times\n Original post:\n"
+                                                        f" https://t.me/c/{formated_chat_id}/{orig_message_id}",
                                        reply_to_message_id=current_msg_id)
 
 async def get_all_messages_with_picture(update: Update, context: ContextTypes.DEFAULT_TYPE):
