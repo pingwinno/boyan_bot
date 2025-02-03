@@ -22,7 +22,7 @@ settings_cur = settings_con.cursor()
 user_cur = user_con.cursor()
 
 hash_cur.execute(
-    "CREATE TABLE IF NOT EXISTS hash_data(message_id NUMERIC, hash TEXT, user_id TEXT, chat_id NUMERIC, PRIMARY KEY (message_id, chat_id) )")
+    "CREATE TABLE IF NOT EXISTS hash_data(message_id NUMERIC, hash TEXT, user_id TEXT, chat_id NUMERIC, is_not_original BOOLEAN, PRIMARY KEY (message_id, chat_id) )")
 user_cur.execute(
     "CREATE TABLE IF NOT EXISTS user_name(user_id PRIMARY KEY, name TEXT)")
 settings_cur.execute("CREATE TABLE IF NOT EXISTS chat_settings(chat_id NUMERIC PRIMARY KEY, settings TEXT)")
@@ -31,27 +31,18 @@ get_chat_text = "SELECT settings FROM chat_settings WHERE chat_id = ?;"
 add_chat_text = "INSERT INTO chat_settings VALUES(?, ?) ON CONFLICT (chat_id) DO UPDATE SET settings = ?;"
 
 get_bayans = """
-SELECT SUM(message_count) AS total_collisions
-FROM (
-    SELECT user_id, hash, COUNT(message_id) AS message_count
-    FROM hash_data
-    WHERE chat_id = ?
-    AND user_id = ?
-    GROUP BY user_id, hash
-    HAVING message_count > 1
-) AS collisions
-GROUP BY user_id
+SELECT COUNT(message_id) AS total_collisions
+FROM hash_data
+WHERE user_id = ?
+AND chat_id = ?
+AND is_not_original = TRUE
 ORDER BY total_collisions DESC;
 """
 get_bayans_stat = """
-SELECT user_id, SUM(message_count) AS total_collisions
-FROM (
-    SELECT user_id, hash, COUNT(message_id) AS message_count
-    FROM hash_data
-    WHERE chat_id = ?
-    GROUP BY user_id, hash
-    HAVING message_count > 1
-) AS collisions
+SELECT user_id, COUNT(message_id) AS total_collisions
+FROM hash_data
+WHERE chat_id = ?
+AND is_not_original = TRUE
 GROUP BY user_id
 ORDER BY total_collisions DESC;
 """
@@ -59,8 +50,8 @@ ORDER BY total_collisions DESC;
 get_messages_for_hash = "SELECT message_id FROM hash_data WHERE hash = ? AND chat_id = ?;"
 get_hash = "SELECT hash FROM hash_data WHERE message_id = ? AND chat_id = ?;"
 get_messages_except_last = "SELECT message_id FROM hash_data WHERE hash = ? AND chat_id = ? AND message_id != ?;"
-get_orig_message = "SELECT MIN(message_id) FROM hash_data where hash = ? AND chat_id = ?;"
-add_hash = "INSERT OR IGNORE INTO hash_data VALUES(?, ?, ?, ?);"
+get_orig_message = "SELECT message_id FROM hash_data where hash = ? AND chat_id = ? AND is_not_original = FALSE;"
+add_hash = "INSERT OR IGNORE INTO hash_data VALUES(?, ?, ?, ?, (SELECT COUNT(message_id) FROM hash_data WHERE hash = ? AND chat_id = ? LIMIT 1));"
 
 get_user_name = "SELECT name FROM user_name WHERE user_id = ?;"
 add_user_name = "INSERT OR REPLACE INTO user_name VALUES(?, ?);"
@@ -116,7 +107,7 @@ async def bayan_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     chat_id = update.message.chat_id
 
-    count = hash_cur.execute(get_bayans, [chat_id, user_id]).fetchone()[0]
+    count = hash_cur.execute(get_bayans, [user_id, chat_id]).fetchone()[0]
     await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
                                    text=f"U posted {count} bayans")
 
@@ -153,7 +144,7 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await new_file.download_to_memory(f)
     image_hash = imagehash.dhash(Image.open(f))
     hash_key = str(image_hash)
-    hash_cur.execute(add_hash, [current_msg_id, hash_key, user_id, chat_id])
+    hash_cur.execute(add_hash, [current_msg_id, hash_key, user_id, chat_id, hash_key, chat_id])
     hash_con.commit()
     user_cur.execute(add_user_name, [user_id, message_user_name])
     user_con.commit()
