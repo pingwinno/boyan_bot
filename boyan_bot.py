@@ -156,17 +156,16 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except TypeError:
             chat_text = "Reply has been not set\nPlease use /set_reply to set custom reply message"
         formated_chat_id = chat_id[4:]
-        messages = hash_cur.execute(get_messages_for_hash, [hash_key, chat_id]).fetchall()
         boyans_message_list = []
         boyans_message_list.append("<blockquote expandable>")
-        for message in messages:
+        for message in previous_messages:
             message_id = message[0]
             boyans_message_list.append(f"https://t.me/c/{formated_chat_id}/{message_id}")
         boyans_message_list.append("</blockquote>")
         boyans_message_text = '\n'.join(boyans_message_list)
 
         await context.bot.send_message(chat_id=chat_id,
-                                       text=chat_text + f"\nHas been posted {len(messages)} times\nPrevious posts:\n {boyans_message_text}",
+                                       text=chat_text + f"\nHas been posted {len(previous_messages)} times\nPrevious posts:\n {boyans_message_text}",
                                        reply_to_message_id=current_msg_id, parse_mode=ParseMode.HTML)
 
 
