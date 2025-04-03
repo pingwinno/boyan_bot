@@ -6,6 +6,7 @@ import sqlite3
 import imagehash
 from PIL import Image
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 from telegram.ext.filters import ChatType
 
@@ -47,7 +48,7 @@ GROUP BY user_id
 ORDER BY total_collisions DESC;
 """
 
-get_messages_for_hash = "SELECT message_id FROM hash_data WHERE hash = ? AND chat_id = ?;"
+get_messages_for_hash = "SELECT message_id FROM hash_data WHERE hash = ? AND chat_id = ? ORDER BY message_id ASC;"
 get_hash = "SELECT hash FROM hash_data WHERE message_id = ? AND chat_id = ?;"
 get_messages_except_last = "SELECT message_id FROM hash_data WHERE hash = ? AND chat_id = ? AND message_id != ?;"
 get_orig_message = "SELECT message_id FROM hash_data where hash = ? AND chat_id = ? AND is_not_original = FALSE;"
@@ -155,11 +156,19 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except TypeError:
             chat_text = "Reply has been not set\nPlease use /set_reply to set custom reply message"
         formated_chat_id = chat_id[4:]
-        orig_message_id = hash_cur.execute(get_orig_message, [hash_key, chat_id]).fetchone()[0]
+        messages = hash_cur.execute(get_messages_for_hash, [hash_key, chat_id]).fetchall()
+        boyans_message_list = []
+        boyans_message_list.append("<blockquote expandable>")
+        for message in messages:
+            message_id = message[0]
+            boyans_message_list.append(f"https://t.me/c/{formated_chat_id}/{message_id}")
+        boyans_message_list.append("</blockquote>")
+        boyans_message_text = '\n'.join(boyans_message_list)
+
         await context.bot.send_message(chat_id=chat_id,
-                                       text=chat_text + f"\nHas been posted {len(previous_messages)} times\n Original post:\n"
-                                                        f" https://t.me/c/{formated_chat_id}/{orig_message_id}",
-                                       reply_to_message_id=current_msg_id)
+                                       text=chat_text + f"\nHas been posted {len(messages)} times\nPrevious posts:\n {boyans_message_text}",
+                                       reply_to_message_id=current_msg_id, parse_mode=ParseMode.HTML)
+
 
 async def get_all_messages_with_picture(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -187,6 +196,7 @@ async def get_all_messages_with_picture(update: Update, context: ContextTypes.DE
         boyans_message_text = '\n'.join(boyans_message_list)
         await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
                                        text=boyans_message_text)
+
 
 if __name__ == '__main__':
     start_handler = CommandHandler('start', start)
