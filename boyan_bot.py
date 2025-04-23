@@ -165,7 +165,7 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
         boyans_message_text = '\n'.join(boyans_message_list)
 
         await context.bot.send_message(chat_id=chat_id,
-                                       text=chat_text + f"\nHas been posted {len(previous_messages)} times\nPrevious posts:\n {boyans_message_text}",
+                                       text=f"{message_user_name}, {chat_text}\nHas been posted {len(previous_messages)} times\nPrevious posts:\n {boyans_message_text}",
                                        reply_to_message_id=current_msg_id, parse_mode=ParseMode.HTML)
 
 
