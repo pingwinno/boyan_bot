@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import os
 import sqlite3
@@ -8,25 +9,40 @@ from PIL import Image
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
-from telegram.ext.filters import ChatType
 
 bot_token = os.environ['APIKEY']
+
+user_list = json.loads(os.environ['USER_LIST'])
+
 
 if not os.path.exists("db"):
     os.mkdir("db")
 hash_con = sqlite3.connect("db/hash_data.db")
 settings_con = sqlite3.connect("db/settings.db")
 user_con = sqlite3.connect("db/user_names.db")
+hash_ignore_con = sqlite3.connect("db/hash_ignore.db")
+
 
 hash_cur = hash_con.cursor()
 settings_cur = settings_con.cursor()
 user_cur = user_con.cursor()
+hash_ignore_cur = hash_ignore_con.cursor()
+
 
 hash_cur.execute(
     "CREATE TABLE IF NOT EXISTS hash_data(message_id NUMERIC, hash TEXT, user_id TEXT, chat_id NUMERIC, is_not_original BOOLEAN, PRIMARY KEY (message_id, chat_id) )")
 user_cur.execute(
     "CREATE TABLE IF NOT EXISTS user_name(user_id PRIMARY KEY, name TEXT)")
+
 settings_cur.execute("CREATE TABLE IF NOT EXISTS chat_settings(chat_id NUMERIC PRIMARY KEY, settings TEXT)")
+
+hash_ignore_cur.execute("CREATE TABLE IF NOT EXISTS hash_ignore(hash TEXT, chat_id NUMERIC, PRIMARY KEY (hash, chat_id))")
+
+get_ignored_hashes_req = "SELECT hash FROM hash_ignore WHERE chat_id = ?;"
+get_ignored_hash_req = "SELECT hash FROM hash_ignore WHERE chat_id = ? AND hash = ?;"
+
+add_ignored_hash = "INSERT OR IGNORE INTO hash_ignore VALUES(?, ?);"
+remove_ignored_hash = "DELETE FROM hash_ignore WHERE hash = ? and chat_id = ?;"
 
 get_chat_text = "SELECT settings FROM chat_settings WHERE chat_id = ?;"
 add_chat_text = "INSERT INTO chat_settings VALUES(?, ?) ON CONFLICT (chat_id) DO UPDATE SET settings = ?;"
@@ -73,16 +89,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                    text="I'm a BAYANIST PUNISHER! \nBEHOLD THE TERROR IN THEIR EYES!")
 
 
-async def incorrect_import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id=update.effective_chat.id,
-                                   text="No data has been found. Please, attach result file from hash_importer script")
-
-
-async def private_import_hash_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id=update.effective_chat.id,
-                                   text="Why do you need this, weirdo?")
-
-
 async def bayan_stat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     boyanist_message_list = []
     chat_id = update.effective_chat.id
@@ -112,6 +118,18 @@ async def bayan_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
                                    text=f"U posted {count} bayans")
 
+async def get_ignored_hashes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    image_hashes = hash_ignore_cur.execute(get_ignored_hashes_req, [chat_id]).fetchall()
+    await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+                                   text=f"Ignored image hashes for this chat {image_hashes}")
+
+async def get_image_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    orig_message_id = update.message.reply_to_message.message_id
+    image_hash = hash_cur.execute(get_hash, [orig_message_id, chat_id]).fetchone()[0]
+    await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+                                   text=f"Image hash is {image_hash}")
 
 async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -130,6 +148,7 @@ async def set_repl_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     user_id = update.message.from_user.id
     current_msg_id = update.message.message_id
     message_user_name = update.message.from_user.name
@@ -149,6 +168,9 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     hash_con.commit()
     user_cur.execute(add_user_name, [user_id, message_user_name])
     user_con.commit()
+    ignored_hash = hash_ignore_cur.execute(get_ignored_hash_req, [chat_id, hash_key]).fetchone()
+    if ignored_hash:
+        return
     previous_messages = hash_cur.execute(get_messages_except_last, [hash_key, chat_id, current_msg_id]).fetchall()
     if previous_messages:
         try:
@@ -177,14 +199,14 @@ async def get_all_messages_with_picture(update: Update, context: ContextTypes.DE
         return
 
     orig_message_id = update.message.reply_to_message.message_id
-    hash = hash_cur.execute(get_hash, [orig_message_id, chat_id]).fetchone()
+    image_hash = hash_cur.execute(get_hash, [orig_message_id, chat_id]).fetchone()
 
-    if hash is None:
+    if image_hash is None:
         await context.bot.send_message(chat_id=chat_id,
                                        text="I don't see a fukin picture here, moron",
                                        reply_to_message_id=update.message.message_id)
     else:
-        messages = hash_cur.execute(get_messages_for_hash, [hash[0], chat_id]).fetchall()
+        messages = hash_cur.execute(get_messages_for_hash, [image_hash[0], chat_id]).fetchall()
         boyans_message_list = []
         list_message = f"This image has been posted {len(messages)} times:"
         boyans_message_list.append(list_message)
@@ -197,6 +219,50 @@ async def get_all_messages_with_picture(update: Update, context: ContextTypes.DE
                                        text=boyans_message_text)
 
 
+async def get_all_messages_with_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+
+    image_hash = update.message.text.split(' ')[1]
+    messages = hash_cur.execute(get_messages_for_hash, [image_hash, chat_id]).fetchall()
+
+    if messages:
+        boyans_message_list = []
+        list_message = f"This image has been posted {len(messages)} times:"
+        boyans_message_list.append(list_message)
+        for message in messages:
+            message_id = message[0]
+            formated_chat_id = str(chat_id)[4:]
+            boyans_message_list.append(f"\nhttps://t.me/c/{formated_chat_id}/{message_id}")
+        boyans_message_text = '\n'.join(boyans_message_list)
+        await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+                                       text=boyans_message_text)
+    else:
+        await context.bot.send_message(chat_id=chat_id,
+                                       text="There are no messages with this hash",
+                                       reply_to_message_id=update.message.message_id)
+
+async def ignore_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in user_list:
+        return
+    chat_id = update.message.chat_id
+    image_hash = update.message.text.split(' ')[1]
+
+    hash_ignore_cur.execute(add_ignored_hash, [image_hash, chat_id])
+    hash_ignore_con.commit()
+    await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+                                   text=f"Images with hash {image_hash} will be ignored")
+
+async def unignore_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in user_list:
+        return
+    chat_id = update.message.chat_id
+    image_hash = update.message.text.split(' ')[1]
+
+    hash_ignore_cur.execute(remove_ignored_hash, [image_hash, chat_id])
+    hash_ignore_con.commit()
+    await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+                                   text=f"Images with hash {image_hash} will not be ignored")
+
 if __name__ == '__main__':
     start_handler = CommandHandler('start', start)
     repl_text_handler = CommandHandler('set_reply', set_repl_text)
@@ -204,15 +270,24 @@ if __name__ == '__main__':
     chat_all_bayans = CommandHandler('get_all_bayans', get_all_messages_with_picture)
     bayan_counter_handler = CommandHandler('bayan_count', bayan_count)
     bayan_stat = CommandHandler('bayan_stat', bayan_stat)
-    import_handler_private = CommandHandler('import_hash_data', private_import_hash_data, (~ChatType.GROUPS))
+    image_hash = CommandHandler('get_hash', get_image_hash)
+    get_by_hash = CommandHandler('get_by_hash', get_all_messages_with_hash)
+    get_ignored_hash_images = CommandHandler('get_ignored', get_ignored_hashes)
+    ignore_hash_image = CommandHandler('ignore', ignore_hash)
+    unignore_hash_image = CommandHandler('unignore', unignore_hash)
 
-    byayan_handler = MessageHandler(filters.PHOTO | filters.VIDEO, byayan_checker)
 
+    byayan_handler = MessageHandler(filters.PHOTO | filters.VIDEO , byayan_checker)
+
+    application.add_handler(get_ignored_hash_images)
+    application.add_handler(ignore_hash_image)
+    application.add_handler(unignore_hash_image)
+    application.add_handler(get_by_hash)
+    application.add_handler(image_hash)
     application.add_handler(start_handler)
     application.add_handler(repl_text_handler)
     application.add_handler(chat_id_handler)
     application.add_handler(chat_all_bayans)
-    application.add_handler(import_handler_private)
     application.add_handler(bayan_stat)
     application.add_handler(byayan_handler)
     application.add_handler(bayan_counter_handler)
