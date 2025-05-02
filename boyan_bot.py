@@ -10,7 +10,8 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
-bot_token = os.environ['APIKEY']
+
+bot_token = os.environ['BOT_TOKEN']
 
 user_list = json.loads(os.environ['USER_LIST'])
 
@@ -138,28 +139,30 @@ async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def set_repl_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reply_text = update.message.text[10:]
-    settings_cur.execute(add_chat_text, [str(update.message.chat_id), reply_text, reply_text])
+    msg = update.message
+    first_space_idx = msg.text.find(" ")
+    reply_text = msg.text[first_space_idx:]
+    settings_cur.execute(add_chat_text, [str(msg.chat_id), reply_text, reply_text])
     settings_con.commit()
-    logging.info(str(update.message.chat.id))
-    chat_text = settings_cur.execute(get_chat_text, [update.message.chat.id]).fetchone()[0]
+    logging.info(str(msg.chat.id))
+    chat_text = settings_cur.execute(get_chat_text, [msg.chat.id]).fetchone()[0]
     logging.info(chat_text)
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Reply is set to " + chat_text)
 
 
 async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    user_id = update.message.from_user.id
-    current_msg_id = update.message.message_id
-    message_user_name = update.message.from_user.name
+    msg = update.message
+    user_id = msg.from_user.id
+    current_msg_id = msg.message_id
+    message_user_name = msg.from_user.name
     logging.info(f'message id is {current_msg_id}')
     logging.info(f'user name is {message_user_name}')
-    chat_id = str(update.message.chat.id)
+    chat_id = str(msg.chat.id)
     logging.info('message received from ' + chat_id)
-    if update.message.video is None:
-        new_file = await update.message.effective_attachment[-1].get_file()
+    if msg.video is None:
+        new_file = await msg.effective_attachment[-1].get_file()
     else:
-        new_file = await update.message.video.thumbnail.get_file()
+        new_file = await msg.video.thumbnail.get_file()
     f = io.BytesIO()
     await new_file.download_to_memory(f)
     image_hash = imagehash.dhash(Image.open(f))
@@ -192,19 +195,20 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def get_all_messages_with_picture(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
     chat_id = update.effective_chat.id
-    if update.message.reply_to_message is None:
-        await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+    if msg.reply_to_message is None:
+        await context.bot.send_message(chat_id=chat_id, reply_to_message_id=msg.id,
                                        text="Reply with this command to a picture")
         return
 
-    orig_message_id = update.message.reply_to_message.message_id
+    orig_message_id = msg.reply_to_message.message_id
     image_hash = hash_cur.execute(get_hash, [orig_message_id, chat_id]).fetchone()
 
     if image_hash is None:
         await context.bot.send_message(chat_id=chat_id,
                                        text="I don't see a fukin picture here, moron",
-                                       reply_to_message_id=update.message.message_id)
+                                       reply_to_message_id=msg.message_id)
     else:
         messages = hash_cur.execute(get_messages_for_hash, [image_hash[0], chat_id]).fetchall()
         boyans_message_list = []
@@ -215,14 +219,15 @@ async def get_all_messages_with_picture(update: Update, context: ContextTypes.DE
             formated_chat_id = str(chat_id)[4:]
             boyans_message_list.append(f"\nhttps://t.me/c/{formated_chat_id}/{message_id}")
         boyans_message_text = '\n'.join(boyans_message_list)
-        await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+        await context.bot.send_message(chat_id=chat_id, reply_to_message_id=msg.id,
                                        text=boyans_message_text)
 
 
 async def get_all_messages_with_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
     chat_id = update.effective_chat.id
 
-    image_hash = update.message.text.split(' ')[1]
+    image_hash = msg.text.split()[1]
     messages = hash_cur.execute(get_messages_for_hash, [image_hash, chat_id]).fetchall()
 
     if messages:
@@ -234,7 +239,7 @@ async def get_all_messages_with_hash(update: Update, context: ContextTypes.DEFAU
             formated_chat_id = str(chat_id)[4:]
             boyans_message_list.append(f"\nhttps://t.me/c/{formated_chat_id}/{message_id}")
         boyans_message_text = '\n'.join(boyans_message_list)
-        await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+        await context.bot.send_message(chat_id=chat_id, reply_to_message_id=msg.id,
                                        text=boyans_message_text)
     else:
         await context.bot.send_message(chat_id=chat_id,
@@ -242,25 +247,27 @@ async def get_all_messages_with_hash(update: Update, context: ContextTypes.DEFAU
                                        reply_to_message_id=update.message.message_id)
 
 async def ignore_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
     if update.effective_user.id not in user_list:
         return
-    chat_id = update.message.chat_id
-    image_hash = update.message.text.split(' ')[1]
+    chat_id = msg.chat_id
+    image_hash = msg.text.split()[1]
 
     hash_ignore_cur.execute(add_ignored_hash, [image_hash, chat_id])
     hash_ignore_con.commit()
-    await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+    await context.bot.send_message(chat_id=chat_id, reply_to_message_id=msg.id,
                                    text=f"Images with hash {image_hash} will be ignored")
 
 async def unignore_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
     if update.effective_user.id not in user_list:
         return
-    chat_id = update.message.chat_id
-    image_hash = update.message.text.split(' ')[1]
+    chat_id = msg.chat_id
+    image_hash = msg.text.split()[1]
 
     hash_ignore_cur.execute(remove_ignored_hash, [image_hash, chat_id])
     hash_ignore_con.commit()
-    await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+    await context.bot.send_message(chat_id=chat_id, reply_to_message_id=msg.id,
                                    text=f"Images with hash {image_hash} will not be ignored")
 
 if __name__ == '__main__':
@@ -275,7 +282,6 @@ if __name__ == '__main__':
     get_ignored_hash_images = CommandHandler('get_ignored', get_ignored_hashes)
     ignore_hash_image = CommandHandler('ignore', ignore_hash)
     unignore_hash_image = CommandHandler('unignore', unignore_hash)
-
 
     byayan_handler = MessageHandler(filters.PHOTO | filters.VIDEO , byayan_checker)
 
