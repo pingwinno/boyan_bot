@@ -3,12 +3,19 @@ import json
 import logging
 import os
 import sqlite3
+from transformers import AutoModelForImageClassification, AutoFeatureExtractor, AutoImageProcessor
+import torch
 
 import imagehash
 from PIL import Image
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
 bot_token = os.environ['APIKEY']
 
@@ -28,6 +35,17 @@ settings_cur = settings_con.cursor()
 user_cur = user_con.cursor()
 hash_ignore_cur = hash_ignore_con.cursor()
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+logging.info(f"Using device: {device}")
+
+# 2. Load model and move it to the specific device
+model = AutoModelForImageClassification.from_pretrained("legekka/AI-Anime-Image-Detector-ViT")
+model.to(device) # <--- Critical step: Move model to GPU
+model.eval()
+
+# Load processor
+# AutoFeatureExtractor is deprecated; AutoImageProcessor is the modern equivalent for ViT
+processor = AutoImageProcessor.from_pretrained("legekka/AI-Anime-Image-Detector-ViT")
 
 hash_cur.execute(
     "CREATE TABLE IF NOT EXISTS hash_data(message_id NUMERIC, hash TEXT, user_id TEXT, chat_id NUMERIC, is_not_original BOOLEAN, PRIMARY KEY (message_id, chat_id) )")
@@ -78,10 +96,6 @@ hash_length_data = {}
 
 application = ApplicationBuilder().token(bot_token).build()
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -148,7 +162,6 @@ async def set_repl_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     user_id = update.message.from_user.id
     current_msg_id = update.message.message_id
     message_user_name = update.message.from_user.name
@@ -172,6 +185,7 @@ async def byayan_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if ignored_hash:
         return
     previous_messages = hash_cur.execute(get_messages_except_last, [hash_key, chat_id, current_msg_id]).fetchall()
+    await evaluate_ai_slop(update, context)
     if previous_messages:
         try:
             chat_text = settings_cur.execute(get_chat_text, [chat_id]).fetchone()[0]
@@ -263,6 +277,68 @@ async def unignore_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
                                    text=f"Images with hash {image_hash} will not be ignored")
 
+async def evaluate_ai_slop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    current_msg_id = update.message.message_id
+    message_user_name = update.message.from_user.name
+    logging.info(f'message id is {current_msg_id}')
+    logging.info(f'user name is {message_user_name}')
+    chat_id = str(update.message.chat.id)
+    logging.info('message received from ' + chat_id)
+    new_file = await update.message.effective_attachment[-1].get_file()
+    f = io.BytesIO()
+    await new_file.download_to_memory(f)
+    image = Image.open(f).convert('RGB')
+
+    # 3. Process image and move inputs to the same device as the model
+    inputs = processor(images=image, return_tensors="pt")
+    inputs = {k: v.to(device) for k, v in inputs.items()}  # <--- Critical step: Move inputs to GPU
+
+    # Inference
+    with torch.no_grad():  # Good practice to disable gradient calculation for inference
+        outputs = model(**inputs)
+        logits = outputs.logits
+
+    # Post-processing (move back to CPU for printing/logic if needed)
+    probs = torch.nn.functional.softmax(logits, dim=1)
+    predicted_class_idx = torch.argmax(probs, dim=1).item()
+    label = model.config.id2label[predicted_class_idx]
+    confidence = probs[0][predicted_class_idx].item()
+
+    logging.info(f"Prediction: {label} ({confidence:.2%})")
+    if label == "ai":
+        await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+                                   text=f"Is that fucking slop?\n{label} ({confidence:.2%})")
+
+async def is_ai_slop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    orig_message_id = update.message.reply_to_message
+    new_file = await orig_message_id.effective_attachment[-1].get_file()
+    f = io.BytesIO()
+    await new_file.download_to_memory(f)
+    image = Image.open(f).convert('RGB')
+
+    # 3. Process image and move inputs to the same device as the model
+    inputs = processor(images=image, return_tensors="pt")
+    inputs = {k: v.to(device) for k, v in inputs.items()}  # <--- Critical step: Move inputs to GPU
+
+    # Inference
+    with torch.no_grad():  # Good practice to disable gradient calculation for inference
+        outputs = model(**inputs)
+        logits = outputs.logits
+
+    # Post-processing (move back to CPU for printing/logic if needed)
+    probs = torch.nn.functional.softmax(logits, dim=1)
+    predicted_class_idx = torch.argmax(probs, dim=1).item()
+    label = model.config.id2label[predicted_class_idx]
+    confidence = probs[0][predicted_class_idx].item()
+
+    logging.info(f"Prediction: {label} ({confidence:.2%})")
+
+    await context.bot.send_message(chat_id=chat_id, reply_to_message_id=update.message.id,
+                                       text=f"Well... The answer is:\n{label} ({confidence:.2%})")
+
+
 if __name__ == '__main__':
     start_handler = CommandHandler('start', start)
     repl_text_handler = CommandHandler('set_reply', set_repl_text)
@@ -273,6 +349,7 @@ if __name__ == '__main__':
     image_hash = CommandHandler('get_hash', get_image_hash)
     get_by_hash = CommandHandler('get_by_hash', get_all_messages_with_hash)
     get_ignored_hash_images = CommandHandler('get_ignored', get_ignored_hashes)
+    is_ai_slop = CommandHandler('is_slop', is_ai_slop)
     ignore_hash_image = CommandHandler('ignore', ignore_hash)
     unignore_hash_image = CommandHandler('unignore', unignore_hash)
 
@@ -291,5 +368,6 @@ if __name__ == '__main__':
     application.add_handler(bayan_stat)
     application.add_handler(byayan_handler)
     application.add_handler(bayan_counter_handler)
+    application.add_handler(is_ai_slop)
 
     application.run_polling()
