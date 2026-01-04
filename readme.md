@@ -16,6 +16,7 @@ Boyan is a bot that helps manage images in group chats by using perceptual hashi
 - **`ignore`** - Add hash to ignore list
 - **`unignore`** - Remove hash from ignore list
 - **`set_reply`** - Set bot reply text
+- **`is_slop`** - Check if image is AI generated
 
 ## Limitations & Workaround  
 Due to Telegram Bot API restrictions, the bot can only process messages sent after it was added to the chat. However, a workaround exists: you can manually populate the database using the chat export feature available in the Telegram desktop client.  
